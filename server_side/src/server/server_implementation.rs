@@ -28,30 +28,50 @@ impl Server {
         server_listener: TcpListener,
         mut server_rx: mpsc::Receiver<ServerCommand>,
     ) -> Result<(), Box<dyn Error>> {
+        loop {
+            // VERY IMPORTANT: tokio::select! acts kind of like a match statement that auto awaits your async functions
 
-        self.handle_client(server_listener).await?;
-        Ok(())
+
+            tokio::select! {
+                accept_client = server_listener.accept() => {
+                    let (client_stream, client_addr) = accept_client?;
+                    let (control_tx, control_rx) = mpsc::channel::<Control>(32);
+                    let client = self.create_client(client_addr, control_tx);
+                    let client_id_copy = client.get_client_id();
+                    self.add_client(client);
+                
+
+                    tokio::spawn(async move {
+                        // do work here...
+                    });
+                    
+                }
+                cmd = server_rx.recv() => {
+                    // will finish later...
+                }
+
+            }
+
+        }
+        
+        
     }
 
-    async fn handle_client(&mut self, server_listener: TcpListener) -> Result<(), Box<dyn Error>> {
-        let (client_stream, client_addr) = server_listener.accept().await?;
-        let (control_tx, control_rx) = mpsc::channel::<Control>(32);
-        let client = self.create_client(client_addr, control_tx);
-        let client_id_copy = client.get_client_id();
+    // async fn handle_client(&mut self, server_listener: TcpListener) -> Result<(), Box<dyn Error>> {
+    //     let (client_stream, client_addr) = server_listener.accept().await?;
+    //     let (control_tx, control_rx) = mpsc::channel::<Control>(32);
+    //     let client = self.create_client(client_addr, control_tx);
+    //     let client_id_copy = client.get_client_id();
 
-        // Adding client and incrementing client count
-        self.add_client(client);
-        self.increment_client_count();
-        self.handle_client_task(client_id_copy, client_stream, control_rx)
-            .await?;
-        Ok(())
-    }
-    async fn handle_client_task(
-        &mut self,
-        id: ClientID,
-        mut client_stream: TcpStream,
-        mut control_rx: mpsc::Receiver<Control>,
-    ) -> Result<(), Box<dyn Error>> {
-        Ok(())
+    //     // Adding client and incrementing client count
+    //     self.add_client(client);
+    //     self.increment_client_count();
+    //     self.handle_client_task(client_id_copy, client_stream, control_rx)
+    //         .await?;
+    //     Ok(())
+    // }
+
+    async fn handle_client_task(socket: TcpStream) {
+
     }
 }
