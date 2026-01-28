@@ -1,8 +1,9 @@
-use super::server::{Server, TcpListener, TcpStream, ClientID, Error, Control, mpsc};
-use super::server_details::{ServerDetails, ServerCommand};
+use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
+use super::server_details::{ServerCommand, ServerDetails};
 
 impl Server {
-    async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>> {
+    async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
+    {
         // Create new Server and bind to specific address
         let (server_tx, server_rx) = mpsc::channel::<ServerCommand>(32);
         let server = Server::new(ServerDetails::new(server_tx));
@@ -31,7 +32,6 @@ impl Server {
         loop {
             // VERY IMPORTANT: tokio::select! acts kind of like a match statement that auto awaits your async functions
 
-
             tokio::select! {
                 accept_client = server_listener.accept() => {
                     let (client_stream, client_addr) = accept_client?;
@@ -39,22 +39,27 @@ impl Server {
                     let client = self.create_client(client_addr, control_tx);
                     let client_id_copy = client.get_client_id();
                     self.add_client(client);
-                
+
 
                     tokio::spawn(async move {
                         // do work here...
                     });
-                    
+
                 }
                 cmd = server_rx.recv() => {
-                    // will finish later...
+                    match cmd {
+                        Some(command) => {
+                            todo!("Will implement this later...");
+                        }
+                        None => {
+
+                        }
+                    }
+
                 }
 
             }
-
         }
-        
-        
     }
 
     // async fn handle_client(&mut self, server_listener: TcpListener) -> Result<(), Box<dyn Error>> {
@@ -71,7 +76,5 @@ impl Server {
     //     Ok(())
     // }
 
-    async fn handle_client_task(socket: TcpStream) {
-
-    }
+    async fn handle_client_task(socket: TcpStream) {}
 }
