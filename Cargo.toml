@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "server_side",
-    "client_side"
+    "client_side",
+    "protocol",
 ]
