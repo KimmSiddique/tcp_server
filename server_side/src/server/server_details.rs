@@ -3,10 +3,16 @@ use core::net::SocketAddr;
 use rand::Rng;
 use tokio::sync::mpsc;
 
-pub enum ServerCommand {
-    Kick(ClientID),
-    Log(String),
+#[derive(Debug)]
+pub enum LogLevel {
+    Info,
+    Warn,
+    Error
+}
 
+pub enum ServerCommand {
+    Kick { client_id: ClientID, reason: String },
+    Log{level: LogLevel, message: String},
 }
 pub struct ServerDetails {
     pub(crate) clients: Vec<Client>,
@@ -19,7 +25,7 @@ impl ServerDetails {
         Self {
             clients: Vec::new(),
             client_count: 0,
-            server_tx
+            server_tx,
         }
     }
 
