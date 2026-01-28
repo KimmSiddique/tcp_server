@@ -1,20 +1,19 @@
 //! Server main loop and orchestration
-//! 
+//!
 //! Responsibilities:
 //!     - Initializes server and binds address to TCP listener
 //!     - Starts server and creates mpsc channels for server -> server_tx and server_rx
 //!     - Server run function controls the main looping of the server with tokio::select! and delegates tasks to other functions
-//! 
-//! 
+//!
+//!
 //! TODO
-//! [] - Implement method to deal with client stream and control_rx 
+//! [] - Implement method to deal with client stream and control_rx
 //! [] - Complete match statement for server_rx.recv()
 //! [] - Implement handle_client_task()
 //! [] - ...
 
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
-
 
 impl Server {
     async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
@@ -57,7 +56,7 @@ impl Server {
 
                     tokio::spawn(async move {
                         // do work here...
-                        Self::handle_client_task(client_stream).await;
+                        Self::handle_client_task(client_stream, control_rx).await;
                     });
 
                 }
@@ -65,6 +64,8 @@ impl Server {
                     match cmd {
                         Some(command) => {
                             todo!("Will implement this later...");
+                            // Server clones the client's transmitter (control_tx) and then will be recieved by control_rx in handle_client_task...
+
                         }
                         None => {
 
@@ -77,6 +78,9 @@ impl Server {
         }
     }
 
-
-    async fn handle_client_task(client_stream: TcpStream) {}
+    async fn handle_client_task(client_stream: TcpStream, control_rx: mpsc::Receiver<Control>) {
+        // We have access to the server's transmitter, which will be used to send messages to the receiver...
+        // control_rx here will be used to
+        let buffer: Vec<u8> = Vec::new();
+    }
 }
