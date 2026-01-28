@@ -1,3 +1,12 @@
+//! Contains implementation for structs and enums which include the following:
+//! 
+//!     Enum:
+//!         LogLevel - Used to let the server know the type of the log message 
+//!         ServerCommand - Contains Kick and Log at the moment, kick allows to kick Clients while log provides helpful messages
+//! 
+//!     Struct:
+//!         ServerDetails - The attributes possessed by the server which include: (1) Vec<Client> (2) ClientCount (3) server_tx (mpsc channel)
+
 use crate::server::client::{Client, ClientDetails, ClientID, Control};
 use core::net::SocketAddr;
 use rand::Rng;
@@ -7,12 +16,28 @@ use tokio::sync::mpsc;
 pub enum LogLevel {
     Info,
     Warn,
-    Error
+    Error,
 }
 
 pub enum ServerCommand {
     Kick { client_id: ClientID, reason: String },
-    Log{level: LogLevel, message: String},
+    Log { level: LogLevel, message: String },
+}
+
+// Implementation for ServerCommand
+impl ServerCommand {
+    pub fn kick(client_id: ClientID, reason: impl Into<String>) -> Self {
+        ServerCommand::Kick {
+            client_id,
+            reason: reason.into(),
+        }
+    }
+    pub fn log(level: LogLevel, message: impl Into<String>) -> Self {
+        ServerCommand::Log {
+            level,
+            message: message.into(),
+        }
+    }
 }
 pub struct ServerDetails {
     pub(crate) clients: Vec<Client>,
