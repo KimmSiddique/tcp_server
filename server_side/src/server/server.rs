@@ -18,6 +18,7 @@ impl Server {
 
     pub fn add_client(&mut self, client: Client) {
         self.server_details.add_client(client);
+        self.increment_client_count();
     }
 
     pub fn increment_client_count(&mut self) {
