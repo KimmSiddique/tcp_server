@@ -1,11 +1,10 @@
+use super::server_details::ServerDetails;
+pub use crate::server::client::Client;
 pub use crate::server::client::{ClientID, Control};
 pub use std::error::Error;
 pub use std::net::SocketAddr;
 pub use tokio::net::{TcpListener, TcpStream};
 pub use tokio::sync::mpsc;
-pub use crate::server::client::Client;
-use super::server_details::ServerDetails;
-
 
 pub struct Server {
     server_details: ServerDetails,
