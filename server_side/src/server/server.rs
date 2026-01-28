@@ -1,7 +1,7 @@
 //! Implementation for Server methods
-//! 
+//!
 //! Responsibilities:
-//!     - Creating a new server instance 
+//!     - Creating a new server instance
 //!     - Certain methods such as adding a client, incrementing client count or decrementing client count and creating clients
 
 use super::server_details::ServerDetails;
