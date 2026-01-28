@@ -1,5 +1,20 @@
+//! Server main loop and orchestration
+//! 
+//! Responsibilities:
+//!     - Initializes server and binds address to TCP listener
+//!     - Starts server and creates mpsc channels for server -> server_tx and server_rx
+//!     - Server run function controls the main looping of the server with tokio::select! and delegates tasks to other functions
+//! 
+//! 
+//! TODO
+//! [] - Implement method to deal with client stream and control_rx 
+//! [] - Complete match statement for server_rx.recv()
+//! [] - Implement handle_client_task()
+//! [] - ...
+
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
+
 
 impl Server {
     async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
@@ -40,9 +55,9 @@ impl Server {
                     let client_id_copy = client.get_client_id();
                     self.add_client(client);
 
-
                     tokio::spawn(async move {
                         // do work here...
+                        Self::handle_client_task(client_stream).await;
                     });
 
                 }
@@ -62,19 +77,6 @@ impl Server {
         }
     }
 
-    // async fn handle_client(&mut self, server_listener: TcpListener) -> Result<(), Box<dyn Error>> {
-    //     let (client_stream, client_addr) = server_listener.accept().await?;
-    //     let (control_tx, control_rx) = mpsc::channel::<Control>(32);
-    //     let client = self.create_client(client_addr, control_tx);
-    //     let client_id_copy = client.get_client_id();
 
-    //     // Adding client and incrementing client count
-    //     self.add_client(client);
-    //     self.increment_client_count();
-    //     self.handle_client_task(client_id_copy, client_stream, control_rx)
-    //         .await?;
-    //     Ok(())
-    // }
-
-    async fn handle_client_task(socket: TcpStream) {}
+    async fn handle_client_task(client_stream: TcpStream) {}
 }
