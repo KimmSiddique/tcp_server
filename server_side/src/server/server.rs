@@ -1,3 +1,9 @@
+//! Implementation for Server methods
+//! 
+//! Responsibilities:
+//!     - Creating a new server instance 
+//!     - Certain methods such as adding a client, incrementing client count or decrementing client count and creating clients
+
 use super::server_details::ServerDetails;
 pub use crate::server::client::Client;
 pub use crate::server::client::{ClientID, Control};
