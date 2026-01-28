@@ -1,9 +1,9 @@
 //! Contains implementation for structs and enums which include the following:
-//! 
+//!
 //!     Enum:
-//!         LogLevel - Used to let the server know the type of the log message 
+//!         LogLevel - Used to let the server know the type of the log message
 //!         ServerCommand - Contains Kick and Log at the moment, kick allows to kick Clients while log provides helpful messages
-//! 
+//!
 //!     Struct:
 //!         ServerDetails - The attributes possessed by the server which include: (1) Vec<Client> (2) ClientCount (3) server_tx (mpsc channel)
 
