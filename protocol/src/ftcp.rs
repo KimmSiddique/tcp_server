@@ -5,7 +5,7 @@
 pub const CMD_LEN: usize = 4;
 
 #[derive(Clone, Copy)]
-enum Command {
+pub enum Command {
     List,
     Get,
     Send,
@@ -36,7 +36,7 @@ impl Command {
     }
 }
 
-struct Ftcp {
+pub struct Ftcp {
     cmd: Command,
     len: u32,
     payload: Vec<u8>,
