@@ -14,6 +14,9 @@
 
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
+use protocol::ftcp::Command;
+use tokio::io::AsyncReadExt;
+use tokio::net::tcp::OwnedReadHalf;
 
 impl Server {
     async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
@@ -48,7 +51,10 @@ impl Server {
 
             tokio::select! {
                 accept_client = server_listener.accept() => {
+                    // Accepting client stream and address
                     let (client_stream, client_addr) = accept_client?;
+                    // Breaking down client stream into read & write
+                    let (read_half, write_half) = client_stream.into_split();
                     let (control_tx, control_rx) = mpsc::channel::<Control>(32);
                     let client = self.create_client(client_addr, control_tx);
                     let client_id_copy = client.get_client_id();
@@ -56,7 +62,7 @@ impl Server {
 
                     tokio::spawn(async move {
                         // do work here...
-                        Self::handle_client_task(client_stream, control_rx).await;
+                        Self::client_reader_task(read_half, control_rx).await;
                     });
 
                 }
@@ -78,9 +84,67 @@ impl Server {
         }
     }
 
-    async fn handle_client_task(client_stream: TcpStream, control_rx: mpsc::Receiver<Control>) {
+    async fn client_reader_task(
+        mut read_half: OwnedReadHalf,
+        mut control_rx: mpsc::Receiver<Control>,
+    ) {
         // We have access to the server's transmitter, which will be used to send messages to the receiver...
-        // control_rx here will be used to
-        let buffer: Vec<u8> = Vec::new();
+        // control_rx here will be used to receive messages from the transmitter...
+        // MIGHT HAVE TO ADD USE FOR CONTROL_RX LATER!
+
+        let mut command_buf = [0u8; 4];
+        let mut payload_buf = [0u8; 4];
+        // Protocol design: reads exactly 4 bytes for the server command, and u32 (4 bytes as well) for the length of the payload.
+        if let Err(err) = read_half.read_exact(&mut command_buf).await {
+            eprintln!("Error reading command buffer: {err}");
+            return;
+        }
+        let cmd = match Command::from_bytes(command_buf) {
+            Ok(cmd) => cmd,
+            Err(err) => {
+                eprintln!("Error converting bytes to Command: {err}");
+                return;
+            }
+        };
+
+        if let Err(err) = read_half.read_exact(&mut payload_buf).await {
+            eprintln!("Error reading payload: {err}");
+            return;
+        }
+
+        const MAX_PAYLOAD_SIZE: usize = 1024;
+        let payload_size = u32::from_be_bytes(payload_buf) as usize;
+
+        if payload_size > MAX_PAYLOAD_SIZE {
+            eprintln!("Payload size exceeds max limit of {MAX_PAYLOAD_SIZE} bytes");
+            return;
+        }
+
+        let mut text_buf = vec![0u8; payload_size];
+        if let Err(err) = read_half.read_exact(&mut text_buf).await {
+            eprintln!("Error reading text buffer of client: {err}");
+            return;
+        }
+        let text = String::from_utf8_lossy(&text_buf);
+        Self::dispatch_command(cmd, &text).await;
+    }
+
+    async fn dispatch_command(cmd: Command, text: &str) {
+        match cmd {
+            Command::List => (),
+            Command::Get => (),
+            Command::Send => (),
+            Command::Okay => (),
+            Command::Err => (),
+            // Will finish later...
+        }
+    }
+
+    async fn handle_okay() {
+        println!("Okay!");
+    }
+    
+    async fn handle_everything_else() {
+        println!("Doing something else!");
     }
 }
