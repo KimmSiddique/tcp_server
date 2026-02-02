@@ -1,5 +1,6 @@
 use core::net::SocketAddr;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 // TYPE OF CLIENT ID DECLARED HERE AS u16
 pub type ClientID = u16;
@@ -21,6 +22,7 @@ pub struct ClientDetails {
     client_id: ClientID,
     client_addr: SocketAddr,
     control_tx: mpsc::Sender<Control>,
+    cancel: CancellationToken,
 }
 
 #[derive(PartialEq, Eq)]
@@ -40,6 +42,7 @@ impl ClientDetails {
             client_id,
             client_addr,
             control_tx,
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -49,6 +52,10 @@ impl ClientDetails {
 
     fn get_client_addr(&self) -> &SocketAddr {
         &self.client_addr
+    }
+
+    fn get_cancellation_token_clone(&self) -> CancellationToken {
+        self.cancel.clone()
     }
 }
 
@@ -68,7 +75,12 @@ impl Client {
     pub fn get_client_addr(&self) -> &SocketAddr {
         self.client_details.get_client_addr()
     }
+
     pub fn get_client_details(&self) -> &ClientDetails {
         &self.client_details
+    }
+
+    pub fn get_cancellation_token_clone(&self) -> CancellationToken {
+        self.client_details.get_cancellation_token_clone()
     }
 }
