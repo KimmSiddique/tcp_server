@@ -22,6 +22,8 @@ pub enum LogLevel {
 pub enum ServerCommand {
     Kick { client_id: ClientID, reason: String },
     Log { level: LogLevel, message: String },
+    ClientDisconnected(ClientID),
+    ClientConnected(ClientID),
 }
 
 // Implementation for ServerCommand
@@ -66,6 +68,9 @@ impl ServerDetails {
         self.client_count -= 1;
     }
 
+    pub(crate) fn get_client_count(&self) -> u16 {
+        self.client_count
+    }
     pub(crate) fn is_client_id_vacant(&self, client_id: ClientID) -> bool {
         self.clients
             .iter()
@@ -92,5 +97,9 @@ impl ServerDetails {
             generated_client_id,
             control_tx,
         ))
+    }
+
+    pub(crate) fn get_server_tx_clone(&self) -> mpsc::Sender<ServerCommand> {
+        self.server_tx.clone()
     }
 }
