@@ -15,8 +15,9 @@
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
 use protocol::ftcp::Command;
-use tokio::io::AsyncReadExt;
-use tokio::net::tcp::OwnedReadHalf;
+use tokio::io::{self, AsyncReadExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio_util::sync::CancellationToken;
 
 impl Server {
     async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
@@ -57,12 +58,22 @@ impl Server {
                     let (read_half, write_half) = client_stream.into_split();
                     let (control_tx, control_rx) = mpsc::channel::<Control>(32);
                     let client = self.create_client(client_addr, control_tx);
-                    let client_id_copy = client.get_client_id();
+                    let client_id_copy_read = client.get_client_id();
+                    let client_id_copy_write = client.get_client_id();
+                    let read_half_cancel_token = client.get_cancellation_token_clone();
+                    let write_half_cancel_token = client.get_cancellation_token_clone();
+
+                    let server_tx_read_clone = self.get_server_tx_clone();
+                    let server_tx_write_clone = self.get_server_tx_clone();
                     self.add_client(client);
 
                     tokio::spawn(async move {
                         // do work here...
-                        Self::client_reader_task(read_half, control_rx).await;
+                        Self::client_reader_task(read_half, client_id_copy_read, read_half_cancel_token, server_tx_read_clone).await;
+                    });
+
+                    tokio::spawn(async move {
+                        Self::client_writer_task(write_half, client_id_copy_write, write_half_cancel_token, control_rx, server_tx_write_clone).await;
                     });
 
                 }
@@ -72,6 +83,7 @@ impl Server {
                             todo!("Will implement this later...");
                             // Server clones the client's transmitter (control_tx) and then will be recieved by control_rx in handle_client_task...
 
+
                         }
                         None => {
 
@@ -80,53 +92,87 @@ impl Server {
 
                 }
 
+
             }
         }
     }
 
+    async fn client_writer_task(
+        write_half: OwnedWriteHalf,
+        client_id: ClientID,
+        cancel_token: CancellationToken,
+        mut control_rx: mpsc::Receiver<Control>,
+        server_tx: mpsc::Sender<ServerCommand>,
+    ) {
+    }
+
     async fn client_reader_task(
         mut read_half: OwnedReadHalf,
-        mut control_rx: mpsc::Receiver<Control>,
+        client_id: ClientID,
+        cancel_token: CancellationToken,
+        server_tx: mpsc::Sender<ServerCommand>,
     ) {
         // We have access to the server's transmitter, which will be used to send messages to the receiver...
         // control_rx here will be used to receive messages from the transmitter...
         // MIGHT HAVE TO ADD USE FOR CONTROL_RX LATER!
 
-        let mut command_buf = [0u8; 4];
-        let mut payload_buf = [0u8; 4];
-        // Protocol design: reads exactly 4 bytes for the server command, and u32 (4 bytes as well) for the length of the payload.
-        if let Err(err) = read_half.read_exact(&mut command_buf).await {
-            eprintln!("Error reading command buffer: {err}");
-            return;
-        }
-        let cmd = match Command::from_bytes(command_buf) {
-            Ok(cmd) => cmd,
-            Err(err) => {
-                eprintln!("Error converting bytes to Command: {err}");
+        loop {
+            let mut command_buf = [0u8; 4];
+            let mut payload_buf = [0u8; 4];
+            // Protocol design: reads exactly 4 bytes for the server command, and u32 (4 bytes as well) for the length of the payload.
+
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    drop(read_half);
+                    return;
+                }
+                read_command = read_half.read_exact(&mut command_buf) => {
+                    match read_command {
+                        Ok(_) => (),
+                        Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+                            cancel_token.cancel();
+                            let _ = server_tx.send(ServerCommand::ClientDisconnected(client_id)).await;
+                            drop(read_half);
+                            return;
+                        }
+                        Err(all_other_errors) => {
+                            eprintln!("Client: {client_id} -> Error reading command buffer: {all_other_errors}");
+                            return;
+                        }
+
+                    }
+                }
+            }
+
+            let cmd = match Command::from_bytes(command_buf) {
+                Ok(cmd) => cmd,
+                Err(err) => {
+                    eprintln!("Error converting bytes to Command: {err}");
+                    return;
+                }
+            };
+
+            if let Err(err) = read_half.read_exact(&mut payload_buf).await {
+                eprintln!("Error reading payload: {err}");
                 return;
             }
-        };
 
-        if let Err(err) = read_half.read_exact(&mut payload_buf).await {
-            eprintln!("Error reading payload: {err}");
-            return;
+            const MAX_PAYLOAD_SIZE: usize = 1024;
+            let payload_size = u32::from_be_bytes(payload_buf) as usize;
+
+            if payload_size > MAX_PAYLOAD_SIZE {
+                eprintln!("Payload size exceeds max limit of {MAX_PAYLOAD_SIZE} bytes");
+                return;
+            }
+
+            let mut text_buf = vec![0u8; payload_size];
+            if let Err(err) = read_half.read_exact(&mut text_buf).await {
+                eprintln!("Error reading text buffer of client: {err}");
+                return;
+            }
+            let text = String::from_utf8_lossy(&text_buf);
+            Self::dispatch_command(cmd, &text).await;
         }
-
-        const MAX_PAYLOAD_SIZE: usize = 1024;
-        let payload_size = u32::from_be_bytes(payload_buf) as usize;
-
-        if payload_size > MAX_PAYLOAD_SIZE {
-            eprintln!("Payload size exceeds max limit of {MAX_PAYLOAD_SIZE} bytes");
-            return;
-        }
-
-        let mut text_buf = vec![0u8; payload_size];
-        if let Err(err) = read_half.read_exact(&mut text_buf).await {
-            eprintln!("Error reading text buffer of client: {err}");
-            return;
-        }
-        let text = String::from_utf8_lossy(&text_buf);
-        Self::dispatch_command(cmd, &text).await;
     }
 
     async fn dispatch_command(cmd: Command, text: &str) {
@@ -143,7 +189,7 @@ impl Server {
     async fn handle_okay() {
         println!("Okay!");
     }
-    
+
     async fn handle_everything_else() {
         println!("Doing something else!");
     }
