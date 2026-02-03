@@ -22,7 +22,7 @@ pub struct ClientDetails {
     client_id: ClientID,
     client_addr: SocketAddr,
     control_tx: mpsc::Sender<Control>,
-    cancel: CancellationToken,
+    cancel_token: CancellationToken,
 }
 
 #[derive(PartialEq, Eq)]
@@ -42,7 +42,7 @@ impl ClientDetails {
             client_id,
             client_addr,
             control_tx,
-            cancel: CancellationToken::new(),
+            cancel_token: CancellationToken::new(),
         }
     }
 
@@ -55,7 +55,7 @@ impl ClientDetails {
     }
 
     fn get_cancellation_token_clone(&self) -> CancellationToken {
-        self.cancel.clone()
+        self.cancel_token.clone()
     }
 }
 
