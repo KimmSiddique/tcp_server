@@ -7,10 +7,11 @@
 //!     Struct:
 //!         ServerDetails - The attributes possessed by the server which include: (1) Vec<Client> (2) ClientCount (3) server_tx (mpsc channel)
 
-use crate::server::client::{Client, ClientDetails, ClientID, Control};
+use crate::server::client::{Client, ClientDetails, ClientID, Control, ClientIP};
 use core::net::SocketAddr;
 use rand::Rng;
 use tokio::sync::mpsc;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum LogLevel {
@@ -23,7 +24,31 @@ pub enum ServerCommand {
     Kick { client_id: ClientID, reason: String },
     Log { level: LogLevel, message: String },
     ClientDisconnected(ClientID),
-    ClientConnected(ClientID),
+    ClientConnected(ClientID, ClientIP),
+}
+
+impl fmt::Debug for ServerCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ServerCommand::Kick { client_id, reason } => {
+                write!(f, "[CMD: KICK] Client: {client_id} kicked for {reason}")
+            }
+            ServerCommand::ClientDisconnected(client_id) => {
+                write!(f, "[CMD: DISCONNECT] Client: {client_id} disconnected")
+            }
+            ServerCommand::ClientConnected(client_id, client_ip) => {
+                write!(f, "[CMD: CONNECT] Client: {client_id} connected with IP: {client_ip}")
+            }
+            ServerCommand::Log { level, message } => {
+                let log_level = match level {
+                    LogLevel::Info => "Info",
+                    LogLevel::Error => "Error",
+                    LogLevel::Warn => "Warn",
+                };
+                write!(f, "[CMD: LOG] {log_level}: {message}")
+            }
+        }
+    }
 }
 
 // Implementation for ServerCommand
