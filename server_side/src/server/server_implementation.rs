@@ -14,30 +14,33 @@
 
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
+use super::client::RequestType::*;
 use protocol::ftcp::Command;
 use tokio::io::{self, AsyncReadExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio_util::sync::CancellationToken;
 
+
 impl Server {
-    async fn init() -> Result<(Server, TcpListener, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
+    async fn init() -> Result<(Server, TcpListener, mpsc::Sender<ServerCommand>, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
     {
         // Create new Server and bind to specific address
         let (server_tx, server_rx) = mpsc::channel::<ServerCommand>(32);
+        let server_tx_clone = server_tx.clone();
         let server = Server::new(ServerDetails::new(server_tx));
         // Setting the address for the server using an environment variable
         let address = std::env::var("ADDRESS").expect("ADDRESS not set");
         let server_listener = tokio::net::TcpListener::bind(address.clone()).await?;
         println!("Listening on address: {address}");
-        Ok((server, server_listener, server_rx))
+        Ok((server, server_listener, server_tx_clone, server_rx))
     }
 
     async fn start_server(&mut self) -> Result<(), Box<dyn Error>> {
         // Init server
-        let (server, server_listener, server_rx) = Self::init().await?;
+        let (server, server_listener, server_tx, server_rx) = Self::init().await?;
 
         // Self running server function that encapsulates everything
-        self.server_run(server, server_listener, server_rx).await?;
+        self.server_run(server, server_listener, server_tx, server_rx).await?;
         Ok(())
     }
 
@@ -45,6 +48,7 @@ impl Server {
         &mut self,
         server: Server,
         server_listener: TcpListener,
+        server_tx: mpsc::Sender<ServerCommand>,
         mut server_rx: mpsc::Receiver<ServerCommand>,
     ) -> Result<(), Box<dyn Error>> {
         loop {
@@ -57,27 +61,34 @@ impl Server {
                     // Breaking down client stream into read & write
                     let (read_half, write_half) = client_stream.into_split();
                     let (control_tx, control_rx) = mpsc::channel::<Control>(32);
+                    let control_tx_clone = control_tx.clone();
+                    let client_addr_clone = client_addr.clone();
+                    
                     let client = self.create_client(client_addr, control_tx);
-                    let client_id_copy_read = client.get_client_id();
-                    let client_id_copy_write = client.get_client_id();
+                    let client_id_copy = client.get_client_id();
+
+                    server_tx.send(ServerCommand::ClientConnected(client_id_copy, client_addr_clone)).await?;
+
                     let read_half_cancel_token = client.get_cancellation_token_clone();
                     let write_half_cancel_token = client.get_cancellation_token_clone();
 
                     let server_tx_read_clone = self.get_server_tx_clone();
                     let server_tx_write_clone = self.get_server_tx_clone();
+
                     self.add_client(client);
 
                     tokio::spawn(async move {
                         // do work here...
-                        Self::client_reader_task(read_half, client_id_copy_read, read_half_cancel_token, server_tx_read_clone).await;
+                        Self::client_reader_task(read_half, client_id_copy, read_half_cancel_token, server_tx_read_clone, control_tx_clone).await;
                     });
 
                     tokio::spawn(async move {
-                        Self::client_writer_task(write_half, client_id_copy_write, write_half_cancel_token, control_rx, server_tx_write_clone).await;
+                        Self::client_writer_task(write_half, write_half_cancel_token, control_rx, server_tx_write_clone).await;
                     });
 
                 }
                 cmd = server_rx.recv() => {
+                    println!("{:?}", cmd);
                     match cmd {
                         Some(command) => {
                             todo!("Will implement this later...");
@@ -99,7 +110,6 @@ impl Server {
 
     async fn client_writer_task(
         write_half: OwnedWriteHalf,
-        client_id: ClientID,
         cancel_token: CancellationToken,
         mut control_rx: mpsc::Receiver<Control>,
         server_tx: mpsc::Sender<ServerCommand>,
@@ -111,6 +121,7 @@ impl Server {
         client_id: ClientID,
         cancel_token: CancellationToken,
         server_tx: mpsc::Sender<ServerCommand>,
+        control_tx: mpsc::Sender<Control>,
     ) {
         // We have access to the server's transmitter, which will be used to send messages to the receiver...
         // control_rx here will be used to receive messages from the transmitter...
@@ -170,24 +181,70 @@ impl Server {
                 eprintln!("Error reading text buffer of client: {err}");
                 return;
             }
-            let text = String::from_utf8_lossy(&text_buf);
-            Self::dispatch_command(cmd, &text).await;
+            let text = String::from_utf8_lossy(&text_buf).to_string();
+            let control_tx_clone = control_tx.clone();
+            Self::dispatch_command(cmd, text, control_tx_clone, client_id).await;
         }
     }
 
-    async fn dispatch_command(cmd: Command, text: &str) {
+    async fn dispatch_command(
+        cmd: Command,
+        text: String,
+        control_tx: mpsc::Sender<Control>,
+        client_id: ClientID,
+    ) {
         match cmd {
-            Command::List => (),
-            Command::Get => (),
-            Command::Send => (),
-            Command::Okay => (),
-            Command::Err => (),
-            // Will finish later...
-        }
+            Command::List => {
+                if let Err(err) = control_tx.send(Control::request_from(GetList, text, client_id)).await {
+                    eprintln!("Error dispatching command List: {err}");
+                    return;
+                }
+            },
+            Command::Get => {
+                if let Err(err) = control_tx.send(Control::request_from(GetFile, text, client_id)).await {
+                    eprintln!("Error dispatching command Get: {err}");
+                    return;
+                }
+            },
+            Command::Send => {
+                if let Err(err) = control_tx.send(Control::request_from(SendMessage, text, client_id)).await {
+                    eprintln!("Error dispatching command Send: {err}");
+                    return;
+                }
+            },
+            Command::Okay => {
+                if let Err(err) = control_tx.send(Control::request_from(GetOkay, text, client_id)).await {
+                    eprintln!("Error dispatching command Okay: {err}");
+                    return;
+                }
+            },
+            Command::Err => {
+                if let Err(err) = control_tx.send(Control::request_from(GetList, text, client_id)).await {
+                    eprintln!("Error dispatching command Err: {err}");
+                    return;
+                }
+            },
+        };
+    }
+
+    async fn handle_list() {
+        println!("Okay!");
+    }
+
+    async fn handle_get() {
+
+    }
+
+    async fn handle_send() {
+
     }
 
     async fn handle_okay() {
-        println!("Okay!");
+
+    }
+
+    async fn handle_err() {
+
     }
 
     async fn handle_everything_else() {
