@@ -4,11 +4,29 @@ use tokio_util::sync::CancellationToken;
 
 // TYPE OF CLIENT ID DECLARED HERE AS u16
 pub type ClientID = u16;
+pub type ClientIP = SocketAddr;
+
+pub enum RequestType {
+    GetList,
+    GetFile,
+    SendMessage,
+    GetOkay,
+    GetErr,
+}
 
 pub enum Control {
-    Kick,
-    Text(String),
     Bytes(Vec<u8>),
+    Request {
+        request_type: RequestType,
+        text: String,
+        client_id: ClientID,
+    },
+}
+
+impl Control {
+    pub fn request_from(request_type: RequestType, text: impl Into<String>, client_id: ClientID) -> Self {
+        Self::Request { request_type, text: text.into(), client_id }
+    }
 }
 
 pub struct Client {
