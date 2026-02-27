@@ -24,8 +24,16 @@ pub enum Control {
 }
 
 impl Control {
-    pub fn request_from(request_type: RequestType, text: impl Into<String>, client_id: ClientID) -> Self {
-        Self::Request { request_type, text: text.into(), client_id }
+    pub fn request_from(
+        request_type: RequestType,
+        text: impl Into<String>,
+        client_id: ClientID,
+    ) -> Self {
+        Self::Request {
+            request_type,
+            text: text.into(),
+            client_id,
+        }
     }
 }
 
