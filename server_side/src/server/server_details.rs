@@ -2,16 +2,16 @@
 //!
 //!     Enum:
 //!         LogLevel - Used to let the server know the type of the log message
-//!         ServerCommand - Contains Kick and Log at the moment, kick allows to kick Clients while log provides helpful messages
+//!         ServerCommand - Contains Kick, Log, ClientDisconnected & ClientConnected, kick allows to kick Clients while log provides helpful messages
 //!
 //!     Struct:
 //!         ServerDetails - The attributes possessed by the server which include: (1) Vec<Client> (2) ClientCount (3) server_tx (mpsc channel)
 
-use crate::server::client::{Client, ClientDetails, ClientID, Control, ClientIP};
+use crate::server::client::{Client, ClientDetails, ClientID, ClientIP, Control};
 use core::net::SocketAddr;
 use rand::Rng;
-use tokio::sync::mpsc;
 use std::fmt;
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub enum LogLevel {
@@ -20,6 +20,7 @@ pub enum LogLevel {
     Error,
 }
 
+// Enum for server command, this will be used to 
 pub enum ServerCommand {
     Kick { client_id: ClientID, reason: String },
     Log { level: LogLevel, message: String },
@@ -37,7 +38,10 @@ impl fmt::Debug for ServerCommand {
                 write!(f, "[CMD: DISCONNECT] Client: {client_id} disconnected")
             }
             ServerCommand::ClientConnected(client_id, client_ip) => {
-                write!(f, "[CMD: CONNECT] Client: {client_id} connected with IP: {client_ip}")
+                write!(
+                    f,
+                    "[CMD: CONNECT] Client: {client_id} connected with IP: {client_ip}"
+                )
             }
             ServerCommand::Log { level, message } => {
                 let log_level = match level {
