@@ -12,18 +12,29 @@
 //! [] - Implement handle_client_task()
 //! [] - ...
 
+use crate::server::client::RequestType;
+
+use std::fs;
+use super::client::RequestType::*;
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
-use super::client::RequestType::*;
 use protocol::ftcp::Command;
 use tokio::io::{self, AsyncReadExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio_util::sync::CancellationToken;
 
-
 impl Server {
-    async fn init() -> Result<(Server, TcpListener, mpsc::Sender<ServerCommand>, mpsc::Receiver<ServerCommand>), Box<dyn Error>>
-    {
+    async fn init() -> Result<
+        (
+            Server,
+            TcpListener,
+            mpsc::Sender<ServerCommand>,
+            mpsc::Receiver<ServerCommand>,
+        ),
+        Box<dyn Error>,
+    > {
+        // Create directory 'files' if it does not exist else ignore
+        fs::create_dir_all("files")?;
         // Create new Server and bind to specific address
         let (server_tx, server_rx) = mpsc::channel::<ServerCommand>(32);
         let server_tx_clone = server_tx.clone();
@@ -40,7 +51,8 @@ impl Server {
         let (server, server_listener, server_tx, server_rx) = Self::init().await?;
 
         // Self running server function that encapsulates everything
-        self.server_run(server, server_listener, server_tx, server_rx).await?;
+        self.server_run(server, server_listener, server_tx, server_rx)
+            .await?;
         Ok(())
     }
 
@@ -63,7 +75,7 @@ impl Server {
                     let (control_tx, control_rx) = mpsc::channel::<Control>(32);
                     let control_tx_clone = control_tx.clone();
                     let client_addr_clone = client_addr.clone();
-                    
+
                     let client = self.create_client(client_addr, control_tx);
                     let client_id_copy = client.get_client_id();
 
@@ -77,8 +89,8 @@ impl Server {
 
                     self.add_client(client);
 
+                    // Spawns 2 tasks in parallel, one will be used to read the client's stream, the other will be used to write to the client stream (i.e. sending files to the user)
                     tokio::spawn(async move {
-                        // do work here...
                         Self::client_reader_task(read_half, client_id_copy, read_half_cancel_token, server_tx_read_clone, control_tx_clone).await;
                     });
 
@@ -88,16 +100,19 @@ impl Server {
 
                 }
                 cmd = server_rx.recv() => {
+                    // Prints out the command in debug format (implemented manually), will need to implement server command Kick here specifically to check if Some user exists before trying to kick, this prevents kicking the same user twice
                     println!("{:?}", cmd);
                     match cmd {
                         Some(command) => {
                             todo!("Will implement this later...");
-                            // Server clones the client's transmitter (control_tx) and then will be recieved by control_rx in handle_client_task...
+                            // Need implementation for kick
+                            
 
 
                         }
                         None => {
-
+                            // This indicates that the channel has been closed
+                            return Ok(())
                         }
                     }
 
@@ -114,6 +129,53 @@ impl Server {
         mut control_rx: mpsc::Receiver<Control>,
         server_tx: mpsc::Sender<ServerCommand>,
     ) {
+
+        tokio::select! {
+            _check_token_cancelled = cancel_token.cancelled() => {
+                drop(write_half);
+                return;
+            }
+            cmd = control_rx.recv() => {
+                match cmd {
+                    Some(command) => {
+                        if let Control::Request { request_type, text, client_id } = command {
+                            match request_type {
+                                RequestType::GetList => {
+                                    
+                                }
+                                RequestType::GetFile => {
+
+                                }
+                                RequestType::SendMessage => {
+
+                                }
+                                RequestType::GetOkay => {
+
+                                }
+                                RequestType::GetErr => {
+
+                                }
+                            }
+
+                        }
+                    }
+                    None => {
+
+                    }
+
+                }
+            }
+        }
+
+        // This contains the control_rx which will receive incoming requests sent from the client_reader_task function, will deal with the command requests
+        let cmd = match control_rx.recv().await {
+            Some(command) => {
+
+            }
+            None => {
+
+            }
+        };
     }
 
     async fn client_reader_task(
@@ -133,7 +195,7 @@ impl Server {
             // Protocol design: reads exactly 4 bytes for the server command, and u32 (4 bytes as well) for the length of the payload.
 
             tokio::select! {
-                _ = cancel_token.cancelled() => {
+                _check_token_cancelled = cancel_token.cancelled() => {
                     drop(read_half);
                     return;
                 }
@@ -195,57 +257,64 @@ impl Server {
     ) {
         match cmd {
             Command::List => {
-                if let Err(err) = control_tx.send(Control::request_from(GetList, text, client_id)).await {
+                if let Err(err) = control_tx
+                    .send(Control::request_from(GetList, text, client_id))
+                    .await
+                {
                     eprintln!("Error dispatching command List: {err}");
                     return;
                 }
-            },
+            }
             Command::Get => {
-                if let Err(err) = control_tx.send(Control::request_from(GetFile, text, client_id)).await {
+                if let Err(err) = control_tx
+                    .send(Control::request_from(GetFile, text, client_id))
+                    .await
+                {
                     eprintln!("Error dispatching command Get: {err}");
                     return;
                 }
-            },
+            }
             Command::Send => {
-                if let Err(err) = control_tx.send(Control::request_from(SendMessage, text, client_id)).await {
+                if let Err(err) = control_tx
+                    .send(Control::request_from(SendMessage, text, client_id))
+                    .await
+                {
                     eprintln!("Error dispatching command Send: {err}");
                     return;
                 }
-            },
+            }
             Command::Okay => {
-                if let Err(err) = control_tx.send(Control::request_from(GetOkay, text, client_id)).await {
+                if let Err(err) = control_tx
+                    .send(Control::request_from(GetOkay, text, client_id))
+                    .await
+                {
                     eprintln!("Error dispatching command Okay: {err}");
                     return;
                 }
-            },
+            }
             Command::Err => {
-                if let Err(err) = control_tx.send(Control::request_from(GetList, text, client_id)).await {
+                if let Err(err) = control_tx
+                    .send(Control::request_from(GetList, text, client_id))
+                    .await
+                {
                     eprintln!("Error dispatching command Err: {err}");
                     return;
                 }
-            },
+            }
         };
     }
 
     async fn handle_list() {
-        println!("Okay!");
+        
     }
 
-    async fn handle_get() {
+    async fn handle_get() {}
 
-    }
+    async fn handle_send() {}
 
-    async fn handle_send() {
+    async fn handle_okay() {}
 
-    }
-
-    async fn handle_okay() {
-
-    }
-
-    async fn handle_err() {
-
-    }
+    async fn handle_err() {}
 
     async fn handle_everything_else() {
         println!("Doing something else!");
