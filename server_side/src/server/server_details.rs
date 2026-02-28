@@ -20,7 +20,7 @@ pub enum LogLevel {
     Error,
 }
 
-// Enum for server command, this will be used to 
+// Enum for server command, this will be used to notify the server of different events, such as when a user disconnects or gets kicked
 pub enum ServerCommand {
     Kick { client_id: ClientID, reason: String },
     Log { level: LogLevel, message: String },
