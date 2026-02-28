@@ -7,19 +7,19 @@
 //!
 //!
 //! TODO
-//! [] - Implement method to deal with client stream and control_rx
+//! [x] - Implement method to deal with client stream and control_rx
 //! [] - Complete match statement for server_rx.recv()
-//! [] - Implement handle_client_task()
+//! [x] - Implement handle_client_task()
 //! [] - ...
 
-use crate::server::client::RequestType;
+use crate::server::client::{Client, RequestType};
 
-use std::fs;
 use super::client::RequestType::*;
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
 use protocol::ftcp::Command;
-use tokio::io::{self, AsyncReadExt};
+use std::{error, fs};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio_util::sync::CancellationToken;
 
@@ -35,6 +35,7 @@ impl Server {
     > {
         // Create directory 'files' if it does not exist else ignore
         fs::create_dir_all("files")?;
+
         // Create new Server and bind to specific address
         let (server_tx, server_rx) = mpsc::channel::<ServerCommand>(32);
         let server_tx_clone = server_tx.clone();
@@ -95,7 +96,9 @@ impl Server {
                     });
 
                     tokio::spawn(async move {
-                        Self::client_writer_task(write_half, write_half_cancel_token, control_rx, server_tx_write_clone).await;
+                        if let Err(err) = Self::client_writer_task(write_half, write_half_cancel_token, control_rx, server_tx_write_clone).await {
+                            eprintln!("Error with client writer task function: {err}");
+                        }
                     });
 
                 }
@@ -106,7 +109,7 @@ impl Server {
                         Some(command) => {
                             todo!("Will implement this later...");
                             // Need implementation for kick
-                            
+
 
 
                         }
@@ -124,58 +127,68 @@ impl Server {
     }
 
     async fn client_writer_task(
-        write_half: OwnedWriteHalf,
+        mut write_half: OwnedWriteHalf,
         cancel_token: CancellationToken,
         mut control_rx: mpsc::Receiver<Control>,
         server_tx: mpsc::Sender<ServerCommand>,
-    ) {
+    ) -> Result<(), Box<dyn Error>> {
+        loop {
+            tokio::select! {
+                _check_token_cancelled = cancel_token.cancelled() => {
+                    drop(write_half);
+                    return Ok(())
+                }
+                cmd = control_rx.recv() => {
+                    match cmd {
+                        Some(command) => {
+                            if let Control::Request { request_type, text, client_id } = command {
+                                match request_type {
+                                    RequestType::GetList => {
 
-        tokio::select! {
-            _check_token_cancelled = cancel_token.cancelled() => {
-                drop(write_half);
-                return;
-            }
-            cmd = control_rx.recv() => {
-                match cmd {
-                    Some(command) => {
-                        if let Control::Request { request_type, text, client_id } = command {
-                            match request_type {
-                                RequestType::GetList => {
-                                    
-                                }
-                                RequestType::GetFile => {
+                                        let mut dir = tokio::fs::read_dir("files").await?;
+                                        let mut file_names: Vec<String> = Vec::new();
 
-                                }
-                                RequestType::SendMessage => {
+                                        while let Some(entry) = dir.next_entry().await? {
+                                            file_names.push(entry.file_name().to_string_lossy().to_string());
+                                        }
 
-                                }
-                                RequestType::GetOkay => {
+                                        // joining each file with \n to be seperated later
+                                        let payload = file_names.join("\n");
+                                        let payload_len = payload.len() as u64;
 
-                                }
-                                RequestType::GetErr => {
+                                        // send the length of the payload so client knows how much to read
+                                        write_half.write_all(&payload_len.to_be_bytes()).await?;
 
+                                        // send the actual payload to the client
+                                        write_half.write_all(payload.as_bytes()).await?;
+
+                                    }
+                                    RequestType::GetFile => {
+
+
+                                    }
+                                    RequestType::SendMessage => {
+
+
+                                    }
+                                    RequestType::GetOkay => {
+
+                                    }
+                                    RequestType::GetErr => {
+
+                                    }
                                 }
+
                             }
-
                         }
-                    }
-                    None => {
+                        None => {
+                            // Means channel has been dropped will get cleaned automatically by Rust
+                        }
 
                     }
-
                 }
             }
         }
-
-        // This contains the control_rx which will receive incoming requests sent from the client_reader_task function, will deal with the command requests
-        let cmd = match control_rx.recv().await {
-            Some(command) => {
-
-            }
-            None => {
-
-            }
-        };
     }
 
     async fn client_reader_task(
@@ -302,21 +315,5 @@ impl Server {
                 }
             }
         };
-    }
-
-    async fn handle_list() {
-        
-    }
-
-    async fn handle_get() {}
-
-    async fn handle_send() {}
-
-    async fn handle_okay() {}
-
-    async fn handle_err() {}
-
-    async fn handle_everything_else() {
-        println!("Doing something else!");
     }
 }
