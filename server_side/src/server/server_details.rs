@@ -28,6 +28,7 @@ pub enum ServerCommand {
     ClientConnected(ClientID, ClientIP),
 }
 
+// Will most likely need to remove this in the future...
 impl fmt::Debug for ServerCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
