@@ -17,8 +17,9 @@ use crate::server::client::{Client, RequestType};
 use super::client::RequestType::*;
 use super::server::{ClientID, Control, Error, Server, TcpListener, TcpStream, mpsc};
 use super::server_details::{ServerCommand, ServerDetails};
+use crate::server::server_details::LogLevel;
 use protocol::ftcp::Command;
-use std::{error, fs};
+use std::fs;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio_util::sync::CancellationToken;
@@ -103,14 +104,34 @@ impl Server {
 
                 }
                 cmd = server_rx.recv() => {
-                    // Prints out the command in debug format (implemented manually), will need to implement server command Kick here specifically to check if Some user exists before trying to kick, this prevents kicking the same user twice
-                    println!("{:?}", cmd);
                     match cmd {
                         Some(command) => {
-                            todo!("Will implement this later...");
-                            // Need implementation for kick
-
-
+                            match command {
+                                ServerCommand::ClientDisconnected(client_id) => {
+                                    if let Some(pos) = self.server_details.clients.iter().position(|client| client.get_client_id() == client_id) {
+                                        self.server_details.clients.swap_remove(pos);
+                                    }
+                                    println!("[CMD: DISCONNECT] Client: {client_id} disconnected");
+                                }
+                                ServerCommand::Kick{ client_id, reason} => {
+                                    if let Some(pos) = self.server_details.clients.iter().position(|client| client.get_client_id() == client_id) {
+                                        self.server_details.clients.swap_remove(pos);
+                                    }
+                                    println!("[CMD: KICK] Client: {client_id} kicked for {reason}");
+                                }
+                                ServerCommand::ClientConnected(client_id, client_ip) => {
+                                    println!("[CMD: CONNECT] Client: {client_id} connected with IP: {client_ip}");
+                                }
+                                ServerCommand::Log{ level, message } =>
+                                {
+                                    let log_level = match level {
+                                        LogLevel::Info => "Info",
+                                        LogLevel::Error => "Error",
+                                        LogLevel::Warn => "Warn",
+                                    };
+                                    println!("[CMD: LOG] {log_level}: {message}")
+                                }
+                            }
 
                         }
                         None => {
@@ -145,6 +166,9 @@ impl Server {
                                 match request_type {
                                     RequestType::GetList => {
 
+
+                                        // Be careful with error handling! Breaking out of a loop may cause a problem therefore a possible solution for now that I can think of is:
+                                        // Using server_tx to send message to the recv(), then we can use that to log messages or errors and then continue and start from the loop in the beginning again...
                                         let mut dir = tokio::fs::read_dir("files").await?;
                                         let mut file_names: Vec<String> = Vec::new();
 
@@ -168,11 +192,12 @@ impl Server {
 
                                     }
                                     RequestType::SendMessage => {
-
+                                        println!("[Client: {client_id}] | {text}");
 
                                     }
                                     RequestType::GetOkay => {
-
+                                        //
+                                        return Ok(())
                                     }
                                     RequestType::GetErr => {
 
@@ -203,6 +228,7 @@ impl Server {
         // MIGHT HAVE TO ADD USE FOR CONTROL_RX LATER!
 
         loop {
+            let mut retries: usize = 0;
             let mut command_buf = [0u8; 4];
             let mut payload_buf = [0u8; 4];
             // Protocol design: reads exactly 4 bytes for the server command, and u32 (4 bytes as well) for the length of the payload.
@@ -223,6 +249,15 @@ impl Server {
                         }
                         Err(all_other_errors) => {
                             eprintln!("Client: {client_id} -> Error reading command buffer: {all_other_errors}");
+                            retries += 1;
+                            if retries < 3 {
+                                println!("Retrying...");
+                                continue;
+                            }
+                            println!("Client has been disconnected");
+                            let _ = server_tx.send(ServerCommand::ClientDisconnected(client_id)).await;
+                            cancel_token.cancel();
+                            drop(read_half);
                             return;
                         }
 
