@@ -13,7 +13,7 @@ pub use tokio::net::{TcpListener, TcpStream};
 pub use tokio::sync::mpsc;
 
 pub struct Server {
-    server_details: ServerDetails,
+    pub server_details: ServerDetails,
 }
 
 impl Server {
